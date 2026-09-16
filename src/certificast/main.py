@@ -183,7 +183,11 @@ def generate(
             *[str(p) for p in pptx_paths],
         ]
         completed = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120, check=True
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120 + len(contexts),
+            check=True,
         )
 
         # Validate and copy results to output_dir

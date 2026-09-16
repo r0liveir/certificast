@@ -17,8 +17,9 @@ def make_template(path: Path) -> None:
 
 
 def fake_libreoffice(
-    command: list[str], **_: object
+    command: list[str], **options: object
 ) -> subprocess.CompletedProcess[str]:
+    assert options["timeout"] == 122
     inputs = [Path(argument) for argument in command if argument.endswith(".pptx")]
     assert [Presentation(str(path)).slides[0].shapes[0].text for path in inputs] == [
         "Ana/Silva | Conference",
