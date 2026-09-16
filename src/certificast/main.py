@@ -12,6 +12,13 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 # Not all patterns work in pptx, so we default to __VARIABLE__
 VARIABLE_PATTERN = re.compile(r"__([A-Z0-9_]+)__")
+type Job = tuple[
+    str,
+    str,
+    str,
+    dict[str, str] | None,
+    dict[str, str] | None,
+]
 
 
 ### --------------
@@ -174,3 +181,31 @@ def generate(
             certificates.append(target_path)
 
         return certificates
+
+
+class Pipeline:
+    """A collection of generation jobs executed later."""
+
+    def __init__(self) -> None:
+        self._jobs: list[Job] = []
+
+    def add(
+        self,
+        *,
+        input_template: str,
+        input_file: str,
+        output_dir: str,
+        columns_mapping: dict[str, str] | None = None,
+        defaults: dict[str, str] | None = None,
+    ) -> None:
+        self._jobs.append(
+            (input_template, input_file, output_dir, columns_mapping, defaults)
+        )
+
+    def validate(self) -> None:
+        for template, input_file, _, columns, defaults in self._jobs:
+            validate(template, input_file, columns, defaults)
+
+    def run(self) -> list[Path]:
+        self.validate()
+        return [certificate for job in self._jobs for certificate in generate(*job)]

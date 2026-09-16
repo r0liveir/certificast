@@ -1,6 +1,6 @@
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 from pptx import Presentation
@@ -79,3 +79,30 @@ def test_output_must_be_empty(tmp_path: Path) -> None:
     (output / "existing.pdf").touch()
     with pytest.raises(FileExistsError):
         _ensure_empty_or_create(output)
+
+
+def test_pipeline_defers_validates_and_runs_jobs() -> None:
+    pipeline = certificast.Pipeline()
+    with (
+        patch("certificast.main.validate") as validate,
+        patch(
+            "certificast.main.generate",
+            side_effect=[[Path("first/0001.pdf")], [Path("second/0001.pdf")]],
+        ) as generate,
+    ):
+        pipeline.add(
+            input_template="one.pptx", input_file="one.csv", output_dir="first"
+        )
+        pipeline.add(
+            input_template="two.pptx", input_file="two.csv", output_dir="second"
+        )
+        validate.assert_not_called()
+        generate.assert_not_called()
+
+        assert pipeline.run() == [Path("first/0001.pdf"), Path("second/0001.pdf")]
+
+    assert validate.call_args_list == [
+        call("one.pptx", "one.csv", None, None),
+        call("two.pptx", "two.csv", None, None),
+    ]
+    assert generate.call_count == 2
