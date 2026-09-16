@@ -54,8 +54,12 @@ certificast.generate(
     "output",
     columns_mapping={"NAME": "Full name"},
     defaults={"EVENT": "Annual Conference"},
+    output_name="{NAME}_{EVENT}",
 )
 ```
+
+Custom names are prefixed with the row number and sanitized, producing names
+such as `0001-Ana_Annual Conference.pdf`.
 
 ## Validate without generating
 

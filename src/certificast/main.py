@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from string import Formatter
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -18,6 +19,7 @@ type Job = tuple[
     str,
     dict[str, str] | None,
     dict[str, str] | None,
+    str | None,
 ]
 
 
@@ -41,6 +43,7 @@ def validate(
     input_file: str,
     columns_mapping: dict[str, str] | None = None,
     defaults: dict[str, str] | None = None,
+    output_name: str | None = None,
 ) -> list[dict[str, str]]:
     """Validate inputs and return one resolved context per CSV row."""
     columns_mapping = columns_mapping or {}
@@ -76,6 +79,15 @@ def validate(
     if unknown_mappings:
         raise ValueError(
             f"Mappings contain unknown variables: {sorted(unknown_mappings)}"
+        )
+    unknown_name_fields = {
+        field
+        for _, field, _, _ in Formatter().parse(output_name or "")
+        if field is not None and field not in variables
+    }
+    if unknown_name_fields:
+        raise ValueError(
+            f"Output name contains unknown variables: {sorted(unknown_name_fields)}"
         )
 
     contexts: list[dict[str, str]] = []
@@ -116,10 +128,13 @@ def generate(
     output_dir: str,
     columns_mapping: dict[str, str] | None = None,
     defaults: dict[str, str] | None = None,
+    output_name: str | None = None,
 ) -> list[Path]:
     """Generate numbered PDFs from a one-slide PPTX and UTF-8 CSV."""
 
-    contexts = validate(input_template, input_file, columns_mapping, defaults)
+    contexts = validate(
+        input_template, input_file, columns_mapping, defaults, output_name
+    )
     converter = shutil.which("libreoffice") or shutil.which("soffice")
     if converter is None:
         raise RuntimeError("Install LibreOffice and add it to PATH.")
@@ -172,7 +187,9 @@ def generate(
         )
 
         # Validate and copy results to output_dir
-        for pptx_path in pptx_paths:
+        for index, (pptx_path, row) in enumerate(
+            zip(pptx_paths, contexts, strict=True), start=1
+        ):
             pdf_path = pptx_path.with_suffix(".pdf")
 
             # Check existence
@@ -187,7 +204,15 @@ def generate(
                     raise RuntimeError(f"Corrupt PDF generated: {pdf_path.name}")
 
             # Copy to final destination
-            target_path = output_path.resolve() / pdf_path.name
+            filename = f"{index:04d}.pdf"
+            if output_name:
+                custom_name = re.sub(
+                    r'[<>:"/\\|?*\x00-\x1f]', "_", output_name.format_map(row)
+                ).strip(" .")
+                if not custom_name:
+                    raise ValueError(f"Row {index}: output name is empty.")
+                filename = f"{index:04d}-{custom_name}.pdf"
+            target_path = output_path.resolve() / filename
             shutil.copy2(pdf_path, target_path)
             certificates.append(target_path)
 
@@ -208,14 +233,22 @@ class Pipeline:
         output_dir: str,
         columns_mapping: dict[str, str] | None = None,
         defaults: dict[str, str] | None = None,
+        output_name: str | None = None,
     ) -> None:
         self._jobs.append(
-            (input_template, input_file, output_dir, columns_mapping, defaults)
+            (
+                input_template,
+                input_file,
+                output_dir,
+                columns_mapping,
+                defaults,
+                output_name,
+            )
         )
 
     def validate(self) -> None:
-        for template, input_file, _, columns, defaults in self._jobs:
-            validate(template, input_file, columns, defaults)
+        for template, input_file, _, columns, defaults, output_name in self._jobs:
+            validate(template, input_file, columns, defaults, output_name)
 
     def run(self) -> list[Path]:
         self.validate()

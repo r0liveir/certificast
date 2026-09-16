@@ -21,7 +21,7 @@ def fake_libreoffice(
 ) -> subprocess.CompletedProcess[str]:
     inputs = [Path(argument) for argument in command if argument.endswith(".pptx")]
     assert [Presentation(str(path)).slides[0].shapes[0].text for path in inputs] == [
-        "Ana | Conference",
+        "Ana/Silva | Conference",
         "Bruno | Workshop",
     ]
     for path in inputs:
@@ -34,7 +34,9 @@ def test_generate(tmp_path: Path) -> None:
     csv_file = tmp_path / "people.csv"
     output = tmp_path / "output"
     make_template(template)
-    csv_file.write_text("Full name,EVENT\nAna,\nBruno,Workshop\n", encoding="utf-8")
+    csv_file.write_text(
+        "Full name,EVENT\nAna/Silva,\nBruno,Workshop\n", encoding="utf-8"
+    )
 
     with (
         patch("certificast.main.shutil.which", return_value="libreoffice"),
@@ -46,9 +48,13 @@ def test_generate(tmp_path: Path) -> None:
             str(output),
             {"NAME": "Full name"},
             {"EVENT": "Conference"},
+            "{NAME}_{EVENT}",
         )
 
-    assert result == [output / "0001.pdf", output / "0002.pdf"]
+    assert result == [
+        output / "0001-Ana_Silva_Conference.pdf",
+        output / "0002-Bruno_Workshop.pdf",
+    ]
 
 
 def test_rejects_missing_value(tmp_path: Path) -> None:
@@ -71,6 +77,14 @@ def test_rejects_bad_mapping_and_uncovered_variable(tmp_path: Path) -> None:
         certificast.validate(str(template), str(csv_file), {"WRONG": "Full name"})
     with pytest.raises(ValueError, match="missing required columns.*EVENT"):
         certificast.validate(str(template), str(csv_file), {"NAME": "Full name"})
+    with pytest.raises(ValueError, match="unknown variables.*MISSING"):
+        certificast.validate(
+            str(template),
+            str(csv_file),
+            {"NAME": "Full name"},
+            {"EVENT": "Event"},
+            "{MISSING}",
+        )
 
 
 def test_rejects_split_placeholder(tmp_path: Path) -> None:
@@ -117,7 +131,7 @@ def test_pipeline_defers_validates_and_runs_jobs() -> None:
         assert pipeline.run() == [Path("first/0001.pdf"), Path("second/0001.pdf")]
 
     assert validate.call_args_list == [
-        call("one.pptx", "one.csv", None, None),
-        call("two.pptx", "two.csv", None, None),
+        call("one.pptx", "one.csv", None, None, None),
+        call("two.pptx", "two.csv", None, None, None),
     ]
     assert generate.call_count == 2
