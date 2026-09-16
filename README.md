@@ -1,6 +1,10 @@
+[![PyPI - Version](https://img.shields.io/pypi/v/certificast)](https://pypi.org/project/certificast/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/certificast)](https://pypi.org/project/certificast/)
+
 # certificast
 
 Yet another certificate generator \o/
+
 Generate numbered PDF certificates from a template certificate and a file.
 
 Current scope: one PPTX file and one CSV file.
@@ -9,9 +13,7 @@ Requires Python 3.12+ and LibreOffice (`libreoffice` or `soffice`) on `PATH`.
 
 ## Why this?
 
-I don't really like writing Bash all the time and creating those script pipelines, even
-with AI.
-
+Not sure 😕 but hope this helps someone!
 
 ## Generate certificates
 

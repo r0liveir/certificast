@@ -1,20 +1,34 @@
 [project]
 name = "certificast"
-version = "1.0.0"
-description = ""
+version = "0.1.0"
+description = "Automate certificate generation and distribution through Python scripts"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
-    { name = "wate", email = "ryan.o2712@gmail.com" }
+    { name = "wate", email = "ryan.oliveiraf@usp.br" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2,<3",
-    "mypy>=2.3.1",
-    "pytest>=9.1.1",
     "python-pptx>=1.0.2",
-    "ruff>=0.16.7",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
 ]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+[project.urls]
+Homepage = "https://github.com/r0liveir/certificast"
+Repository = "https://github.com/r0liveir/certificast"
+Issues = "https://github.com/r0liveir/certificast/issues"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.7",
+]
