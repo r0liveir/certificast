@@ -58,6 +58,36 @@ def test_generate(tmp_path: Path) -> None:
     ]
 
 
+def test_large_generation_uses_conversion_batches(tmp_path: Path) -> None:
+    template = tmp_path / "template.pptx"
+    output = tmp_path / "output"
+    make_template(template)
+    batch_sizes: list[int] = []
+
+    def convert(
+        command: list[str], **options: object
+    ) -> subprocess.CompletedProcess[str]:
+        inputs = [Path(argument) for argument in command if argument.endswith(".pptx")]
+        batch_sizes.append(len(inputs))
+        assert options["timeout"] == 120 + len(inputs)
+        for path in inputs:
+            path.with_suffix(".pdf").write_bytes(b"%PDF-1.4\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with (
+        patch(
+            "certificast.main.validate",
+            return_value=[{"NAME": "Ana", "EVENT": "Conference"}] * 101,
+        ),
+        patch("certificast.main.shutil.which", return_value="libreoffice"),
+        patch("certificast.main.subprocess.run", side_effect=convert),
+    ):
+        result = certificast.generate(str(template), "unused.csv", str(output))
+
+    assert batch_sizes == [100, 1]
+    assert len(result) == 101
+
+
 def test_rejects_missing_value(tmp_path: Path) -> None:
     template = tmp_path / "template.pptx"
     csv_file = tmp_path / "people.csv"

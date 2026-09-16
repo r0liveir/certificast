@@ -13,6 +13,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 # Not all patterns work in pptx, so we default to __VARIABLE__
 VARIABLE_PATTERN = re.compile(r"__([A-Z0-9_]+)__")
+CONVERSION_BATCH_SIZE = 100
 type Job = tuple[
     str,
     str,
@@ -170,44 +171,42 @@ def generate(
             deck.save(str(out_pptx))
             pptx_paths.append(out_pptx)
 
-        # Convert all PPTX files to PDF in a single batch
-        profile_uri = (work_dir / "profile").as_uri()
-        cmd = [
-            converter,
-            f"-env:UserInstallation={profile_uri}",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(work_dir),
-            *[str(p) for p in pptx_paths],
-        ]
-        completed = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120 + len(contexts),
-            check=True,
-        )
+        # LibreOffice becomes unreliable with very large conversion commands.
+        for start in range(0, len(pptx_paths), CONVERSION_BATCH_SIZE):
+            batch = pptx_paths[start : start + CONVERSION_BATCH_SIZE]
+            profile_uri = (work_dir / f"profile-{start}").as_uri()
+            cmd = [
+                converter,
+                f"-env:UserInstallation={profile_uri}",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(work_dir),
+                *[str(path) for path in batch],
+            ]
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120 + len(batch),
+                check=True,
+            )
+            for pptx_path in batch:
+                pdf_path = pptx_path.with_suffix(".pdf")
+                if not pdf_path.is_file():
+                    raise RuntimeError(
+                        f"Conversion failed for {pdf_path.name}: {completed.stderr}"
+                    )
+                with pdf_path.open("rb") as stream:
+                    if stream.read(5) != b"%PDF-":
+                        raise RuntimeError(f"Corrupt PDF generated: {pdf_path.name}")
 
-        # Validate and copy results to output_dir
+        # Copy results to output_dir only after every batch succeeds.
         for index, (pptx_path, row) in enumerate(
             zip(pptx_paths, contexts, strict=True), start=1
         ):
             pdf_path = pptx_path.with_suffix(".pdf")
-
-            # Check existence
-            if not pdf_path.is_file():
-                raise RuntimeError(
-                    f"Conversion failed for {pdf_path.name}: {completed.stderr}"
-                )
-
-            # Check PDF magic bytes (%PDF-)
-            with pdf_path.open("rb") as f:
-                if f.read(5) != b"%PDF-":
-                    raise RuntimeError(f"Corrupt PDF generated: {pdf_path.name}")
-
-            # Copy to final destination
             filename = f"{index:04d}.pdf"
             if output_name:
                 custom_name = re.sub(
