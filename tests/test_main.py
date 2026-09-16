@@ -1,0 +1,72 @@
+import subprocess
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from pptx import Presentation
+
+import certificast
+from certificast.main import _ensure_empty_or_create
+
+
+def make_template(path: Path) -> None:
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    slide.shapes.add_textbox(0, 0, 1_000_000, 1_000_000).text = "__NAME__ | __EVENT__"
+    deck.save(str(path))
+
+
+def fake_libreoffice(
+    command: list[str], **_: object
+) -> subprocess.CompletedProcess[str]:
+    inputs = [Path(argument) for argument in command if argument.endswith(".pptx")]
+    assert [Presentation(str(path)).slides[0].shapes[0].text for path in inputs] == [
+        "Ana | Conference",
+        "Bruno | Workshop",
+    ]
+    for path in inputs:
+        path.with_suffix(".pdf").write_bytes(b"%PDF-1.4\n")
+    return subprocess.CompletedProcess(command, 0, "", "")
+
+
+def test_generate(tmp_path: Path) -> None:
+    template = tmp_path / "template.pptx"
+    csv_file = tmp_path / "people.csv"
+    output = tmp_path / "output"
+    make_template(template)
+    csv_file.write_text("Full name,EVENT\nAna,\nBruno,Workshop\n", encoding="utf-8")
+
+    with (
+        patch("certificast.main.shutil.which", return_value="libreoffice"),
+        patch("certificast.main.subprocess.run", side_effect=fake_libreoffice),
+    ):
+        result = certificast.generate(
+            str(template),
+            str(csv_file),
+            str(output),
+            {"NAME": "Full name"},
+            {"EVENT": "Conference"},
+        )
+
+    assert result == [output / "0001.pdf", output / "0002.pdf"]
+
+
+def test_rejects_missing_value(tmp_path: Path) -> None:
+    template = tmp_path / "template.pptx"
+    csv_file = tmp_path / "people.csv"
+    make_template(template)
+    csv_file.write_text("NAME,EVENT\n,Workshop\n", encoding="utf-8")
+
+    with (
+        patch("certificast.main.shutil.which", return_value="libreoffice"),
+        pytest.raises(ValueError, match="missing value for 'NAME'"),
+    ):
+        certificast.generate(str(template), str(csv_file), str(tmp_path / "out"))
+
+
+def test_output_must_be_empty(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    assert _ensure_empty_or_create(output) == output
+    (output / "existing.pdf").touch()
+    with pytest.raises(FileExistsError):
+        _ensure_empty_or_create(output)
