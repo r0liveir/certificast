@@ -54,13 +54,24 @@ def validate(
     ):
         raise ValueError("Tables and groups are not supported in this slice.")
 
-    variables = {
-        name
+    paragraphs = [
+        paragraph
         for shape in deck.slides[0].shapes
         if shape.has_text_frame
         for paragraph in shape.text_frame.paragraphs
+    ]
+    variables = {
+        name
+        for paragraph in paragraphs
         for name in VARIABLE_PATTERN.findall(paragraph.text)
     }
+    for paragraph in paragraphs:
+        for name in VARIABLE_PATTERN.findall(paragraph.text):
+            token = f"__{name}__"
+            if paragraph.text.count(token) != sum(
+                run.text.count(token) for run in paragraph.runs
+            ):
+                raise ValueError(f"Placeholder {token} is split across formatted runs.")
     unknown_mappings = columns_mapping.keys() - variables
     if unknown_mappings:
         raise ValueError(

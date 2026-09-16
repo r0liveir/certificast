@@ -73,6 +73,21 @@ def test_rejects_bad_mapping_and_uncovered_variable(tmp_path: Path) -> None:
         certificast.validate(str(template), str(csv_file), {"NAME": "Full name"})
 
 
+def test_rejects_split_placeholder(tmp_path: Path) -> None:
+    template = tmp_path / "template.pptx"
+    csv_file = tmp_path / "people.csv"
+    make_template(template)
+    deck = Presentation(str(template))
+    paragraph = deck.slides[0].shapes[0].text_frame.paragraphs[0]
+    paragraph.text = "__NA"
+    paragraph.add_run().text = "ME__ | __EVENT__"
+    deck.save(str(template))
+    csv_file.write_text("NAME,EVENT\nAna,Conference\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Placeholder __NAME__ is split"):
+        certificast.validate(str(template), str(csv_file))
+
+
 def test_output_must_be_empty(tmp_path: Path) -> None:
     output = tmp_path / "output"
     assert _ensure_empty_or_create(output) == output
