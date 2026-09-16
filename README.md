@@ -1,79 +1,105 @@
 # certificast
 
-A Python library for generating PDF certificates from existing PPTX templates.
-LibreOffice is required on `PATH` (`libreoffice` or `soffice`). Install the
-library with `pip install -e .` and LibreOffice with your system package manager.
+Yet another certificate generator \o/
+Generate numbered PDF certificates from a template certificate and a file.
 
-Generation supports a list of Python rows and a one-slide template. CSV
-input, column mappings, explicit slide selection, naming, recipients, retention,
-and pipelines will follow in the remaining v1 tickets. There is no v1 CLI.
+Current scope: one PPTX file and one CSV file.
+
+Requires Python 3.12+ and LibreOffice (`libreoffice` or `soffice`) on `PATH`.
+
+## Why this?
+
+I don't really like writing Bash all the time and creating those script pipelines, even
+with AI.
+
+
+## Generate certificates
+
+Before generating, template variables must use uppercase names surrounded by double underscores:
+
+```text
+Certificate awarded to __NAME__ at __EVENT__
+```
+
+Example usage:
 
 ```python
 import certificast
 
-try:
-    result = certificast.generate(
-        template="certificate-template.pptx",
-        rows=[{"person_name": "Ana Silva"}],
-        shared={"event_name": "Conference"},
-        output_dir="certificates",
-    )
-except certificast.ValidationError as error:
-    print(error.report)  # structured errors/warnings with job, row, variable context
-else:
-    print(result.certificates[0])  # absolute published path to certificates/0001.pdf
-    print(result.manifest_path)
+certificates = certificast.generate(
+    input_template="certificate.pptx",
+    input_file="people.csv",
+    output_dir="output",
+)
+
+# print file names
+for certificate in certificates:
+    print(certificate)
 ```
 
-Templates use simple named placeholders such as `{{ person_name }}` or
-`{{- event_name -}}`. Nonblank row values override shared literal fallbacks.
-Missing keys, `None`, empty strings, and whitespace-only strings are blank;
-zero and false are valid, and other nonblank text keeps its whitespace.
-Ordinary text, groups, and tables are traversed. Replacements inside a run
-preserve its formatting. Split placeholders use paragraph replacement and
-return a warning about possible formatting loss. Existing text fitting settings
-are preserved; output fidelity depends on LibreOffice and installed fonts.
+You can also setup a `dict`
 
-All rows are validated before rendering. Each row produces a numbered PDF
-(`0001.pdf`, `0002.pdf`, …); LibreOffice converts the populated PPTX files in
-one invocation. Rows and template text are prepared once, and every expected
-PDF must succeed before the complete batch is published. Empty rows return no
-artifacts and a warning. Very large batches may exceed system command-length
-limits; streaming and conversion chunking are deferred.
+The output directory is created if necessary and must be empty. Each CSV row
+produces `0001.pdf`, `0002.pdf`, and so on.
 
-Successful output contains only the PDFs and a UTF-8 comma-separated
-`manifest.csv`:
+Use `columns_mapping` when CSV headers differ from template variables. Blank
+cells fall back to `defaults` (Useful for one template variable shared on certificates):
 
-```csv
-file,job,row,emails
-0001.pdf,1,1,
+```python
+certificast.generate(
+    "certificate.pptx",
+    "people.csv",
+    "output",
+    columns_mapping={"NAME": "Full name"},
+    defaults={"EVENT": "Annual Conference"},
+)
 ```
 
-Results expose `output_dir`, `manifest_path`, `certificates`, and `warnings`.
-Artifact paths always refer to the published directory. Runtime failures raise
-`GenerationError`; validation failures raise `ValidationError` before rendering.
+## Validate without generating
 
-The output parent must exist, and the destination must be new. Publication
-currently requires Linux with libc `renameat2` and a filesystem supporting
-`RENAME_NOREPLACE`. A uniquely owned temporary sibling holds all work; a
-same-filesystem no-replace directory rename publishes the complete run. Even an
-empty directory created after validation is preserved and blocks publication.
-Unsupported kernels/filesystems fail safely rather than fall back to an unsafe
-rename. This guarantees atomic visibility, rather than power-loss durability.
-Handled failures remove only owned temporary work. If cleanup fails, the
-exception includes the original error, cleanup error, and remaining location;
-a process crash can also leave temporary work.
+```python
+rows = certificast.validate(
+    "certificate.pptx",
+    "people.csv",
+    {"NAME": "Full name"},
+    {"EVENT": "Annual Conference"},
+)
+```
 
-Run the public API checks with LibreOffice and Poppler's `pdfinfo` and
-`pdftotext` installed:
+Validation checks the template, CSV headers and rows, mappings, defaults, and
+variable coverage. It raises `ValueError` for invalid input and returns the
+resolved rows when successful.
+
+## Defer multiple jobs
+
+```python
+pipeline = certificast.Pipeline()
+
+pipeline.add(
+    input_template="certificate.pptx",
+    input_file="attendees.csv",
+    output_dir="output/attendees",
+)
+pipeline.add(
+    input_template="certificate.pptx",
+    input_file="speakers.csv",
+    output_dir="output/speakers",
+    defaults={"EVENT": "Annual Conference"},
+)
+
+pipeline.validate()
+certificates = pipeline.run()
+```
+
+Adding a job does not read or generate anything. `run()` validates every job
+before starting generation, then returns all generated PDF paths. Jobs currently
+publish independently; a later job failure can leave earlier output in place.
+
+## Development
 
 ```sh
-PYTHONPATH=src python -m unittest discover -s tests -v
+uv sync --all-groups
+PYTHONPATH=src uv run pytest -q
+uv run ruff check src tests
+uv run mypy --strict src/certificast/main.py tests/test_main.py
 ```
-
-The real conversion check inspects PDF page count and extracted text. Other
-checks exercise invalid input, converter failures, destination races, and
-cleanup failures at the external process/filesystem boundaries. In environments
-that restrict LibreOffice subprocesses, run the checks with appropriate process
-permissions. For template fidelity, open a generated PDF and compare its layout,
-fonts, and fitting against the source slide; PDF bytes are not a stable snapshot.
