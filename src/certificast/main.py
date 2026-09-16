@@ -69,6 +69,11 @@ def validate(
         for paragraph in paragraphs
         for name in VARIABLE_PATTERN.findall(paragraph.text)
     }
+    variables.update(
+        field
+        for _, field, _, _ in Formatter().parse(output_name or "")
+        if field is not None
+    )
     for paragraph in paragraphs:
         for name in VARIABLE_PATTERN.findall(paragraph.text):
             token = f"__{name}__"
@@ -76,21 +81,6 @@ def validate(
                 run.text.count(token) for run in paragraph.runs
             ):
                 raise ValueError(f"Placeholder {token} is split across formatted runs.")
-    unknown_mappings = columns_mapping.keys() - variables
-    if unknown_mappings:
-        raise ValueError(
-            f"Mappings contain unknown variables: {sorted(unknown_mappings)}"
-        )
-    unknown_name_fields = {
-        field
-        for _, field, _, _ in Formatter().parse(output_name or "")
-        if field is not None and field not in variables
-    }
-    if unknown_name_fields:
-        raise ValueError(
-            f"Output name contains unknown variables: {sorted(unknown_name_fields)}"
-        )
-
     contexts: list[dict[str, str]] = []
     with open(input_file, encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)

@@ -98,17 +98,22 @@ def test_rejects_missing_value(tmp_path: Path) -> None:
         certificast.validate(str(template), str(csv_file))
 
 
-def test_rejects_bad_mapping_and_uncovered_variable(tmp_path: Path) -> None:
+def test_uses_output_variables_and_ignores_unused_mappings(tmp_path: Path) -> None:
     template = tmp_path / "template.pptx"
     csv_file = tmp_path / "people.csv"
     make_template(template)
-    csv_file.write_text("Full name\nAna\n", encoding="utf-8")
+    csv_file.write_text("Full name,Title\nAna,My Paper\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="unknown variables"):
-        certificast.validate(str(template), str(csv_file), {"WRONG": "Full name"})
-    with pytest.raises(ValueError, match="missing required columns.*EVENT"):
-        certificast.validate(str(template), str(csv_file), {"NAME": "Full name"})
-    with pytest.raises(ValueError, match="unknown variables.*MISSING"):
+    rows = certificast.validate(
+        str(template),
+        str(csv_file),
+        {"NAME": "Full name", "TITLE": "Title", "UNUSED": "Not present"},
+        {"EVENT": "Conference"},
+        "{TITLE}",
+    )
+    assert rows == [{"EVENT": "Conference", "NAME": "Ana", "TITLE": "My Paper"}]
+
+    with pytest.raises(ValueError, match="missing required columns.*MISSING"):
         certificast.validate(
             str(template),
             str(csv_file),

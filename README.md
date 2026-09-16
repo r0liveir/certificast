@@ -59,7 +59,8 @@ certificast.generate(
 ```
 
 Custom names are prefixed with the row number and sanitized, producing names
-such as `0001-Ana_Annual Conference.pdf`.
+such as `0001-Ana_Annual Conference.pdf`. They may reference mapped CSV fields
+that are not present in the template; other unused mappings are ignored.
 
 ## Validate without generating
 

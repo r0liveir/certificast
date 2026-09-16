@@ -1,6 +1,6 @@
 [project]
 name = "certificast"
-version = "0.1.0"
+version = "0.1.2"
 description = "Automate certificate generation and distribution through Python scripts"
 readme = "README.md"
 license = { text = "MIT" }
