@@ -57,11 +57,20 @@ def test_rejects_missing_value(tmp_path: Path) -> None:
     make_template(template)
     csv_file.write_text("NAME,EVENT\n,Workshop\n", encoding="utf-8")
 
-    with (
-        patch("certificast.main.shutil.which", return_value="libreoffice"),
-        pytest.raises(ValueError, match="missing value for 'NAME'"),
-    ):
-        certificast.generate(str(template), str(csv_file), str(tmp_path / "out"))
+    with pytest.raises(ValueError, match="missing value for 'NAME'"):
+        certificast.validate(str(template), str(csv_file))
+
+
+def test_rejects_bad_mapping_and_uncovered_variable(tmp_path: Path) -> None:
+    template = tmp_path / "template.pptx"
+    csv_file = tmp_path / "people.csv"
+    make_template(template)
+    csv_file.write_text("Full name\nAna\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unknown variables"):
+        certificast.validate(str(template), str(csv_file), {"WRONG": "Full name"})
+    with pytest.raises(ValueError, match="missing required columns.*EVENT"):
+        certificast.validate(str(template), str(csv_file), {"NAME": "Full name"})
 
 
 def test_output_must_be_empty(tmp_path: Path) -> None:

@@ -29,6 +29,69 @@ def _ensure_empty_or_create(dir_path: str | Path) -> Path:
     return path
 
 
+def validate(
+    input_template: str,
+    input_file: str,
+    columns_mapping: dict[str, str] | None = None,
+    defaults: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    """Validate inputs and return one resolved context per CSV row."""
+    columns_mapping = columns_mapping or {}
+    defaults = defaults or {}
+    deck = Presentation(input_template)
+    if len(deck.slides) != 1:
+        raise ValueError("Template must contain exactly one slide.")
+    if any(
+        shape.has_table or shape.shape_type == MSO_SHAPE_TYPE.GROUP
+        for shape in deck.slides[0].shapes
+    ):
+        raise ValueError("Tables and groups are not supported in this slice.")
+
+    variables = {
+        name
+        for shape in deck.slides[0].shapes
+        if shape.has_text_frame
+        for paragraph in shape.text_frame.paragraphs
+        for name in VARIABLE_PATTERN.findall(paragraph.text)
+    }
+    unknown_mappings = columns_mapping.keys() - variables
+    if unknown_mappings:
+        raise ValueError(
+            f"Mappings contain unknown variables: {sorted(unknown_mappings)}"
+        )
+
+    contexts: list[dict[str, str]] = []
+    with open(input_file, encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        headers = reader.fieldnames
+        if not headers or len(set(headers)) != len(headers):
+            raise ValueError("CSV requires unique column headers.")
+        missing_columns = {
+            columns_mapping.get(name, name)
+            for name in variables
+            if columns_mapping.get(name, name) not in headers and not defaults.get(name)
+        }
+        if missing_columns:
+            raise ValueError(
+                f"CSV is missing required columns: {sorted(missing_columns)}"
+            )
+
+        for index, row in enumerate(reader, start=1):
+            if None in row or None in row.values():
+                raise ValueError(f"CSV row {index} does not match its header.")
+            values: dict[str, str] = {}
+            for name in sorted(variables):
+                value = row.get(columns_mapping.get(name, name)) or defaults.get(name)
+                if value is None or not value.strip():
+                    raise ValueError(f"Row {index}: missing value for {name!r}.")
+                values[name] = value
+            contexts.append(values)
+
+    if not contexts:
+        raise ValueError("Empty CSV given.")
+    return contexts
+
+
 def generate(
     input_template: str,
     input_file: str,
@@ -38,21 +101,13 @@ def generate(
 ) -> list[Path]:
     """Generate numbered PDFs from a one-slide PPTX and UTF-8 CSV."""
 
-    columns_mapping = columns_mapping or {}
-    defaults = defaults or {}
-    output_path = _ensure_empty_or_create(output_dir)
-
+    contexts = validate(input_template, input_file, columns_mapping, defaults)
     converter = shutil.which("libreoffice") or shutil.which("soffice")
     if converter is None:
         raise RuntimeError("Install LibreOffice and add it to PATH.")
 
     deck = Presentation(str(input_template))
-    if len(deck.slides) != 1:
-        raise ValueError("Template must contain exactly one slide.")
-
-    for shape in deck.slides[0].shapes:
-        if shape.has_table or shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-            raise ValueError("Tables and groups are not supported in this slice.")
+    output_path = _ensure_empty_or_create(output_dir)
 
     # Extract all paragraph
     paragraphs = [
@@ -62,41 +117,6 @@ def generate(
         for paragraph in shape.text_frame.paragraphs
     ]
     runs = [(run, run.text) for paragraph, _ in paragraphs for run in paragraph.runs]
-
-    # Extract the variables in the pptx, using VARIABLE_PATTERN
-    variables = sorted(
-        {name for _, text in paragraphs for name in VARIABLE_PATTERN.findall(text)}
-    )
-
-    # Read and convert rows into standard dicts (context)
-    contexts: list[dict[str, str]] = []
-
-    with open(input_file, mode="r", encoding="utf-8-sig", newline="") as stream:
-        reader = csv.DictReader(stream)
-
-        if not reader.fieldnames or len(set(reader.fieldnames)) != len(
-            reader.fieldnames
-        ):
-            raise ValueError("CSV requires unique column headers.")
-
-        for index, row in enumerate(reader, start=1):
-            if None in row or None in row.values():
-                raise ValueError(f"CSV row {index} does not match its header.")
-
-            values: dict[str, str] = {}
-
-            for name in variables:
-                value = row.get(columns_mapping.get(name, name))
-                if value is None or not value.strip():
-                    value = defaults.get(name)
-                if value is None or not value.strip():
-                    raise ValueError(f"Row {index}: missing value for {name!r}.")
-                values[name] = value
-
-            contexts.append(values)
-
-    if not contexts:
-        raise ValueError("Empty CSV given.")
 
     certificates: list[Path] = []
 
